@@ -85,7 +85,7 @@ fn find_basin(basins: &netcdf::Variable, longitude: f64, latitude: f64) -> i32 {
         }
     }
 
-    match basins.value::<i64,_>(closecorner_idx){
+    match basins.value::<i32,_>(closecorner_idx){
         Ok(idx) => idx as i32,
         Err(e) => panic!("basin problems: {:?} {:#?}", e, closecorner_idx)
     }   
@@ -108,8 +108,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // // collection objects
     let noaasst = client.database("argo").collection("noaaOIsst");
-    let sst_meta = client.database("argo").collection("timeseriesMeta");
-    let summaries = client.database("argo").collection("summaries");
+    //let sst_meta = client.database("argo").collection("timeseriesMeta");
+    //let summaries = client.database("argo").collection("summaries");
 
     // Rust structs to serialize time properly
     #[derive(Serialize, Deserialize, Debug)]
@@ -151,10 +151,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     /////////////////////////////////////////////////////////////////////////////////
 
-    let file = netcdf::open("data/sst.wkmean.1990-present.nc")?;
+    let file = netcdf::open("/data/sst.week.mean.nc")?;
 
     // basin lookup
-    let basinfile = netcdf::open("data/basinmask_01.nc")?;
+    let basinfile = netcdf::open("/data/basinmask_01.nc")?;
     let basins = &basinfile.variable("BASIN_TAG").expect("Could not find variable 'BASIN_TAG'");
 
     // all times recorded as days since Jan 1 1800
@@ -168,13 +168,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // construct metadata
     let mut timeseries = Vec::new();
-    for timeidx in 0..1727 {
+    for timeidx in 0..2326 {
         timeseries.push(bson::DateTime::parse_rfc3339_str((t0 + Duration::days(time.value::<i64, _>(timeidx)?)).to_rfc3339().replace("+00:00", "Z")).unwrap());
     }
 
     let metadata = SstMetadoc{
-        _id: String::from("noaa-oi-sst-v2"),
-        data_type: String::from("noaa-oi-sst-v2"),
+        _id: String::from("noaa-oi-sst-v2-high-res"),
+        data_type: String::from("noaa-oi-sst-v2-high-res"),
         data_info: (
             vec!(String::from("sst")),
             vec!(String::from("units"), String::from("long_name")),
@@ -186,59 +186,66 @@ async fn main() -> Result<(), Box<dyn Error>> {
         timeseries: timeseries,
         source: vec!(
             Sourcedoc{
-                source: vec!(String::from("NOAA Optimum Interpolation SST V2")),
-                url: String::from("https://psl.noaa.gov/data/gridded/data.noaa.oisst.v2.html")
+                source: vec!(String::from("NOAA Optimum Interpolation SST V2 High Resolution")),
+                url: String::from("https://psl.noaa.gov/data/gridded/data.noaa.oisst.v2.highres.html")
             }
         ),
         lattice: Lattice{
-            center: [0.5, 0.5],
-            spacing: [1.0, 1.0],
-            minLat : -89.5,
-            minLon : -179.5,
-            maxLat : 89.5,
-            maxLon : 179.5
+            center: vec![0.125, 0.125],
+            spacing: vec![0.25, 0.25],
+            minLat : -89.875,
+            minLon : -179.875,
+            maxLat : 89.875,
+            maxLon : 179.875
         }
     };
     let metadata_doc = bson::to_document(&metadata).unwrap();
-    sst_meta.insert_one(metadata_doc.clone(), None).await?;
+    //sst_meta.insert_one(metadata_doc.clone(), None).await?;
 
     // construct summary doc
     let summary = summaryDoc {
         _id: String::from("noaasstsummary"),
         data: vec!(String::from("sst")),
-        longitude_grid_spacing_degrees: 1.0,
-        latitude_grid_spacing_degrees: 1.0,
-        longitude_center: 0.5,
-        latitude_center: 0.5
+        longitude_grid_spacing_degrees: 0.25,
+        latitude_grid_spacing_degrees: 0.25,
+        longitude_center: 0.125,
+        latitude_center: 0.125
     };
     let summary_doc = bson::to_document(&summary).unwrap();
-    summaries.insert_one(summary_doc.clone(), None).await?;
+    //summaries.insert_one(summary_doc.clone(), None).await?;
 
     // construct data docs
-    for latidx in 0..180 {
+    for latidx in 288..720 {
         let lat = lat.value::<f64, _>([latidx])?;
         let mut docs = Vec::new(); // collect all the docs for this latitude, and write all at once.
-        for lonidx in 0..360 {
+        for lonidx in 0..1440 {
             let lon = tidylon(lon.value::<f64, _>([lonidx])?);
             let mut ssts = Vec::new();
-            for timeidx in 0..1727 {
-                ssts.push((sst.value::<i32, _>([timeidx, latidx, lonidx])? as f64) * 0.01); // sst is stored as a short int with scale factor 0.01
+            for timeidx in 0..2326 {
+                ssts.push(sst.value::<f64, _>([timeidx, latidx, lonidx])?);
+            }
+            if ssts.iter().all(|&x| x == -9.969209968386869e+36){
+                continue; // all fill values, drop it
             }
             let basin = find_basin(&basins, lon, lat);
             let id = [lon.to_string(), lat.to_string()].join("_");
             let data = doc!{
                 "_id": id,
-                "metadata": ["noaa-oi-sst-v2"],
+                "metadata": ["noaa-oi-sst-v2-high-res"],
                 "basin": basin,
                 "geolocation": {
                     "type": "Point",
                     "coordinates": [lon, lat]
                 },
-                "data": [ssts.clone()]
+                "data": [ssts.clone()],
+                "level": 0.0
             };
             docs.push(data);
         }
-        noaasst.insert_many(docs, None).await?;
+        if !docs.is_empty(){
+            noaasst.insert_many(docs, None).await?;
+        }
+        println!("wrote lat index {}", latidx);
     }
 
     Ok(())

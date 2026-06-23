@@ -1,7 +1,0 @@
-FROM python:3.9
-
-RUN pip install pymongo
-WORKDIR /app
-COPY compute-summaries.py compute-summaries.py
-RUN chown -R 1000660000 /app
-CMD ["python", "compute-summaries.py"]

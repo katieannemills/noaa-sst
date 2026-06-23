@@ -5,6 +5,4 @@ RUN pip install xarray pymongo netCDF4
 
 WORKDIR /app
 COPY proofread.py .
-COPY proofread.sh .
-RUN chown -R 1000660000 /app
-CMD bash proofread.sh
+CMD python -u proofread.py

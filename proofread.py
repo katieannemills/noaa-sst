@@ -1,5 +1,5 @@
 # usage: python proofread.py
-# expects data/sst.wkmean.1990-present.nc
+# expects /tmp/sst.week.mean.nc
 import xarray, random, time, math
 from pymongo import MongoClient
 
@@ -15,20 +15,24 @@ client = MongoClient('mongodb://database/argo')
 db = client.argo
 
 # data files
-upstream = xarray.open_dataset('data/sst.wkmean.1990-present.nc', decode_times=False)
+upstream = xarray.open_dataset('/tmp/sst.week.mean.nc', decode_times=False)
 
 # metadata record
-metadata = list(db.noaaOIsstMeta.find({"_id":"noaa-oi-sst-v2"}))[0]
+metadata = list(db.timeseriesMeta.find({"_id":'noaa-oi-sst-v2-high-res'}))[0]
 
 while True:
 
-        latidx = math.floor(180*random.random())
-        lonidx = math.floor(360*random.random())
-        timeidx = math.floor(1727*random.random())
-        data = list(db.noaaOIsst.find({"_id": str(tidylon(upstream['lon'][lonidx].to_dict()['data'])) + "_" + str(upstream['lat'][latidx].to_dict()['data'])}))[0]
-        if round(data['data'][0][timeidx],2) != round(upstream['sst'][timeidx, latidx, lonidx].to_dict()['data'], 2):
-                print(latidx, lonidx, timeidx, data['data'][0][timeidx], upstream['sst'][timeidx, latidx, lonidx].to_dict()['data'])
-        else:
+        latidx = math.floor(720*random.random())
+        lonidx = math.floor(1440*random.random())
+        timeidx = math.floor(2326*random.random())
+        id = str(tidylon(upstream['lon'][lonidx].to_dict()['data'])) + "_" + str(upstream['lat'][latidx].to_dict()['data'])
+        print(id)
+        truth = upstream['sst'][timeidx, latidx, lonidx].to_dict()['data']
+        if not math.isnan(truth): # nans are on land
+            data = list(db.noaaOIsst.find({"_id": id }))[0]
+            if round(data['data'][0][timeidx],2) != round(truth, 2):
+                print('mismatch:', latidx, lonidx, timeidx, data['data'][0][timeidx], upstream['sst'][timeidx, latidx, lonidx].to_dict()['data'])
+            else:
                 print('ok')
 
-        time.sleep(60)
+        time.sleep(1)
