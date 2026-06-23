@@ -108,8 +108,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // // collection objects
     let noaasst = client.database("argo").collection("noaaOIsst");
-    //let sst_meta = client.database("argo").collection("timeseriesMeta");
-    //let summaries = client.database("argo").collection("summaries");
+    let sst_meta = client.database("argo").collection("timeseriesMeta");
+    let summaries = client.database("argo").collection("summaries");
 
     // Rust structs to serialize time properly
     #[derive(Serialize, Deserialize, Debug)]
@@ -200,7 +200,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     };
     let metadata_doc = bson::to_document(&metadata).unwrap();
-    //sst_meta.insert_one(metadata_doc.clone(), None).await?;
+    sst_meta.insert_one(metadata_doc.clone(), None).await?;
 
     // construct summary doc
     let summary = summaryDoc {
@@ -212,10 +212,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         latitude_center: 0.125
     };
     let summary_doc = bson::to_document(&summary).unwrap();
-    //summaries.insert_one(summary_doc.clone(), None).await?;
+    summaries.insert_one(summary_doc.clone(), None).await?;
 
     // construct data docs
-    for latidx in 288..720 {
+    for latidx in 0..720 {
         let lat = lat.value::<f64, _>([latidx])?;
         let mut docs = Vec::new(); // collect all the docs for this latitude, and write all at once.
         for lonidx in 0..1440 {
